@@ -245,6 +245,14 @@
         [data-theme="dark"] .draft-banner .btn-discard:hover{background:rgba(255,255,255,.08)}
         .draft-dot{width:7px;height:7px;border-radius:50%;background:var(--md-sys-color-tertiary);display:inline-block;margin-left:4px;vertical-align:middle;animation:draftPulse 2s ease-in-out infinite}
         @keyframes draftPulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+        .undo-bar{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--md-sys-color-inverse-surface);color:var(--md-sys-color-inverse-on-surface);padding:10px 16px;border-radius:10px;box-shadow:var(--md-sys-elevation-2);z-index:2001;opacity:0;transition:all .25s cubic-bezier(.2,0,0,1);font-size:13px;font-weight:500;display:flex;align-items:center;gap:12px;white-space:nowrap}
+        .undo-bar.show{transform:translateX(-50%) translateY(0);opacity:1}
+        .undo-bar button{background:var(--md-sys-color-primary);color:var(--md-sys-color-on-primary);border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer}
+        .reminder-banner{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;margin-bottom:14px;background:#FFF0C3;color:var(--color-warning);font-size:12px;font-weight:500}
+        [data-theme="dark"] .reminder-banner{background:#3D3000;color:#F5BF48}
+        .reminder-banner .material-icons-round{font-size:18px;flex-shrink:0}
+        .reminder-banner button{margin-left:auto;background:transparent;border:none;font-size:11px;font-weight:600;color:inherit;cursor:pointer;padding:4px 8px;border-radius:6px}
     </style>
 </head>
 <body>
@@ -253,7 +261,7 @@
             <h1><span class="material-icons-round">account_balance_wallet</span>マネープラン</h1>
             <div class="header-actions">
                 <button class="icon-btn" onclick="toggleTheme()" title="テーマ"><span class="material-icons-round" id="themeIcon">dark_mode</span></button>
-                <button class="icon-btn" onclick="exportData()" title="エクスポート"><span class="material-icons-round">download</span></button>
+                <button class="icon-btn" onclick="showExportMenu()" title="エクスポート"><span class="material-icons-round">download</span></button>
                 <button class="icon-btn" onclick="document.getElementById('importFile').click()" title="インポート"><span class="material-icons-round">upload</span></button>
                 <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
             </div>
@@ -363,6 +371,9 @@
         </div>
     </div>
     <div id="snackbar" class="snackbar"></div>
+    <div id="undoBar" class="undo-bar"></div>
+    <div id="reminderBanner"></div>
+    <div id="exportMenu" class="modal-overlay" onclick="if(event.target===this)closeModal('exportMenu')"><div class="modal" style="max-height:40vh"><div class="modal-handle"></div><div class="modal-header"><h3>エクスポート</h3></div><div class="modal-body"><div class="btn-container" style="flex-direction:column"><button class="btn btn-tonal" onclick="exportData();closeModal('exportMenu')"><span class="material-icons-round">data_object</span>JSON形式でエクスポート</button><button class="btn btn-tonal" onclick="exportCSV();closeModal('exportMenu')"><span class="material-icons-round">table_view</span>CSV形式でエクスポート（Excel対応）</button></div></div><div class="modal-footer"><button class="btn btn-text" onclick="closeModal('exportMenu')">キャンセル</button></div></div></div>
     <div id="calendarOverlay" class="calendar-overlay" onclick="if(event.target===this)closeCalendar()">
         <div class="calendar-picker">
             <div class="calendar-header">
@@ -417,18 +428,74 @@
         <div class="form-group"><label>詳細</label><input type="text" id="modalUnplannedMemo" placeholder="任意"></div>
     </div><div class="modal-footer"><button class="btn btn-text" onclick="closeModal('unplannedModal')">キャンセル</button><button class="btn btn-filled" onclick="saveUnplanned()">追加</button></div></div></div>
 <script>
-let settings={initialSavings:210000,startDate:'2026/2',endDate:'2029/3'};
-let incomePatterns=[{name:'アルバイト',amount:50000,start:'2026/2',end:'2026/4',memo:''},{name:'アルバイト',amount:80000,start:'2026/5',end:'',memo:''}];
-let fixedExpenses=[{name:'サブスク',amount:1580,category:'サブスク',start:'',end:''},{name:'交際費',amount:5000,category:'交際費',start:'',end:''},{name:'美容室',amount:4000,category:'美容',start:'',end:''},{name:'予備費',amount:20000,category:'予備費',start:'',end:''}];
-let installments=[{name:'タブレット',amount:9167,start:'2026/3',count:12,memo:'Paidy'}];
-let recurring=[{name:'定期券',amount:39800,start:'2026/4',interval:6,count:6,memo:''},{name:'教科書',amount:20000,start:'2026/4',interval:12,count:1,memo:'1年'},{name:'教科書',amount:15000,start:'2027/4',interval:12,count:1,memo:'2年'},{name:'教科書',amount:10000,start:'2028/4',interval:12,count:1,memo:'3年'}];
-let largeExpenses=[{date:'2026/2',amount:35000,category:'旅行',memo:'友人と'},{date:'2027/9',amount:300000,category:'免許',memo:'自動車'},{date:'2028/10',amount:50000,category:'就活',memo:'スーツ'},{date:'2028/11',amount:30000,category:'就活',memo:'交通費'}];
+let settings={initialSavings:0,startDate:'2026/1',endDate:'2029/3'};
+let incomePatterns=[];
+let fixedExpenses=[];
+let installments=[];
+let recurring=[];
+let largeExpenses=[];
 let actualData={};
 let currentEditIndex=-1,chartInstance=null,compareChartInstance=null,simMode='planned';
 let calendarTarget='',calendarYear=2026;
 function toggleTheme(){const h=document.documentElement,d=h.getAttribute('data-theme')==='dark';h.setAttribute('data-theme',d?'light':'dark');document.getElementById('themeIcon').textContent=d?'dark_mode':'light_mode';localStorage.setItem('mp_theme',d?'light':'dark');if(chartInstance)calculateSimulation();if(compareChartInstance)displayCompareChart()}
 function loadTheme(){const s=localStorage.getItem('mp_theme'),p=window.matchMedia('(prefers-color-scheme:dark)').matches,t=s||(p?'dark':'light');document.documentElement.setAttribute('data-theme',t);document.getElementById('themeIcon').textContent=t==='dark'?'light_mode':'dark_mode'}
-window.onload=()=>{loadTheme();loadData();loadDraft();loadSettings();renderAll();calculateSimulation();initMonthSelectors()};
+
+// ===== Undo（削除取り消し） =====
+let undoStack=null,undoTimer=null;
+function showUndoBar(label,restoreFn){
+  clearTimeout(undoTimer);
+  undoStack=restoreFn;
+  const bar=document.getElementById('undoBar');
+  bar.innerHTML=`<span>${label}を削除しました</span><button onclick="executeUndo()">元に戻す</button>`;
+  bar.classList.add('show');
+  undoTimer=setTimeout(()=>{bar.classList.remove('show');undoStack=null},4000);
+}
+function executeUndo(){
+  clearTimeout(undoTimer);
+  document.getElementById('undoBar').classList.remove('show');
+  if(undoStack){undoStack();undoStack=null;}
+}
+
+// ===== エクスポートメニュー =====
+function showExportMenu(){document.getElementById('exportMenu').classList.add('active')}
+
+// ===== CSV出力 =====
+function exportCSV(){
+  const rows=[['種別','項目名','金額','開始月','終了月','メモ']];
+  incomePatterns.forEach(i=>rows.push(['収入',i.name,i.amount,i.start,i.end||'',i.memo||'']));
+  fixedExpenses.forEach(i=>rows.push(['固定費',i.name,i.amount,i.start||'',i.end||'',i.category]));
+  installments.forEach(i=>rows.push(['分割払い',i.name,i.amount+'×'+i.count+'回',i.start,'',i.memo||'']));
+  recurring.forEach(i=>rows.push(['定期支出',i.name,i.amount,i.start,'',i.interval+'ヶ月毎×'+i.count+'回']));
+  largeExpenses.forEach(i=>rows.push(['大型支出',i.category,i.amount,i.date,'',i.memo]));
+  Object.entries(actualData).forEach(([mk,d])=>{
+    if(d.income)rows.push(['実績収入',mk,d.income,mk,'','']);
+    if(d.balance)rows.push(['実績残高',mk,d.balance,mk,'','']);
+    (d.unplanned||[]).forEach(u=>rows.push(['予定外支出',u.category,u.amount,u.date||mk,'',u.memo||'']));
+  });
+  const bom='﻿';
+  const csv=bom+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const b=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);
+  a.download=`moneyplan_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  localStorage.setItem('mp_last_export',Date.now().toString());
+}
+
+// ===== 定期エクスポートリマインダー =====
+function checkExportReminder(){
+  const last=localStorage.getItem('mp_last_export');
+  const banner=document.getElementById('reminderBanner');
+  const hasData=incomePatterns.length||fixedExpenses.length||Object.keys(actualData).length;
+  if(!hasData){banner.innerHTML='';return}
+  const days=last?Math.floor((Date.now()-parseInt(last))/(1000*60*60*24)):999;
+  if(days>=30){
+    banner.innerHTML=`<div class="reminder-banner"><span class="material-icons-round">backup</span><span>${last?days+'日間':'まだ一度も'}バックアップされていません。定期的なエクスポートを推奨します。</span><button onclick="showExportMenu();dismissReminder()">今すぐ</button><button onclick="dismissReminder()">後で</button></div>`;
+  }else{banner.innerHTML=''}
+}
+function dismissReminder(){document.getElementById('reminderBanner').innerHTML=''}
+
+window.onload=()=>{loadTheme();loadData();loadDraft();loadSettings();renderAll();calculateSimulation();initMonthSelectors();checkExportReminder()};
 function switchTab(n,e){document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));(e||event).target.closest('.nav-tab').classList.add('active');document.getElementById(n).classList.add('active');if(n==='actual')loadActualMonth();if(n==='compare')loadCompareData()}
 function setSimMode(m){simMode=m;document.getElementById('modePlanned').classList.toggle('active',m==='planned');document.getElementById('modeActual').classList.toggle('active',m==='actual');document.getElementById('actualModeAlert').style.display=m==='actual'?'flex':'none';calculateSimulation()}
 function showSnackbar(m){const s=document.getElementById('snackbar');s.textContent=m;s.classList.add('show');setTimeout(()=>s.classList.remove('show'),2500)}
@@ -444,17 +511,17 @@ function loadSettings(){document.getElementById('initialSavings').value=settings
 function saveSettings(){settings.initialSavings=parseInt(document.getElementById('initialSavings').value)||0;settings.startDate=document.getElementById('startDate').value||'2026/2';settings.endDate=document.getElementById('endDate').value||'2029/3';saveData();initMonthSelectors();calculateSimulation();showSnackbar('保存しました')}
 function saveData(){localStorage.setItem('mp_settings',JSON.stringify(settings));localStorage.setItem('mp_income',JSON.stringify(incomePatterns));localStorage.setItem('mp_fixed',JSON.stringify(fixedExpenses));localStorage.setItem('mp_inst',JSON.stringify(installments));localStorage.setItem('mp_rec',JSON.stringify(recurring));localStorage.setItem('mp_large',JSON.stringify(largeExpenses));localStorage.setItem('mp_actual',JSON.stringify(actualData))}
 function loadData(){try{const s=localStorage.getItem('mp_settings');if(s)settings=JSON.parse(s);const i=localStorage.getItem('mp_income');if(i)incomePatterns=JSON.parse(i);const f=localStorage.getItem('mp_fixed');if(f)fixedExpenses=JSON.parse(f);const inst=localStorage.getItem('mp_inst');if(inst)installments=JSON.parse(inst);const r=localStorage.getItem('mp_rec');if(r)recurring=JSON.parse(r);const l=localStorage.getItem('mp_large');if(l)largeExpenses=JSON.parse(l);const a=localStorage.getItem('mp_actual');if(a)actualData=JSON.parse(a)}catch(e){}}
-function exportData(){const d={settings,incomePatterns,fixedExpenses,installments,recurring,largeExpenses,actualData};const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`moneyplan_${new Date().toISOString().split('T')[0]}.json`;a.click()}
+function exportData(){const d={settings,incomePatterns,fixedExpenses,installments,recurring,largeExpenses,actualData};const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`moneyplan_${new Date().toISOString().split('T')[0]}.json`;a.click();localStorage.setItem('mp_last_export',Date.now().toString())}
 function importData(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{const d=JSON.parse(ev.target.result);if(d.settings)settings=d.settings;if(d.incomePatterns)incomePatterns=d.incomePatterns;if(d.fixedExpenses)fixedExpenses=d.fixedExpenses;if(d.installments)installments=d.installments;if(d.recurring)recurring=d.recurring;if(d.largeExpenses)largeExpenses=d.largeExpenses;if(d.actualData)actualData=d.actualData;draftData={};saveDraftToStorage();saveData();loadSettings();renderAll();initMonthSelectors();calculateSimulation();showSnackbar('インポート完了')}catch{showSnackbar('読み込みエラー')}};r.readAsText(f);e.target.value=''}
 function generateMonths(){const m=[];const[sy,sm]=(settings.startDate||'2026/2').split('/').map(Number);const[ey,em]=(settings.endDate||'2029/3').split('/').map(Number);for(let y=sy;y<=ey;y++){const st=y===sy?sm:1,en=y===ey?em:12;for(let mo=st;mo<=en;mo++)m.push({year:y,month:mo,key:`${y}/${mo}`})}return m}
 function initMonthSelectors(){const m=generateMonths();['actualMonth','compareMonth'].forEach(id=>{const sel=document.getElementById(id);const prev=sel.value;sel.innerHTML=m.map(x=>`<option value="${x.key}">${x.year}年${x.month}月</option>`).join('');if(prev&&m.some(x=>x.key===prev))sel.value=prev})}
 function navActualMonth(d){const sel=document.getElementById('actualMonth'),opts=[...sel.options],idx=sel.selectedIndex+d;if(idx>=0&&idx<opts.length){sel.selectedIndex=idx;loadActualMonth()}}
 function renderAll(){renderIncomeList();renderFixedList();renderInstallmentList();renderRecurringList();renderLargeList()}
-function renderIncomeList(){const c=document.getElementById('incomeList');if(!incomePatterns.length){c.innerHTML='<div class="empty-state"><span class="material-icons-round">info</span><p>収入パターンなし</p></div>';return}c.innerHTML='';incomePatterns.forEach((item,idx)=>{const p=item.end?`${item.start}〜${item.end}`:`${item.start}〜`;const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">payments</span></div><div class="data-item-info"><div class="data-item-title">${item.name}</div><div class="data-item-subtitle">${p}${item.memo?' ・'+item.memo:''}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{incomePatterns.splice(idx,1);saveData();renderIncomeList();calculateSimulation()},()=>showIncomeModal(idx));c.appendChild(el)})}
-function renderFixedList(){const c=document.getElementById('fixedList'),total=fixedExpenses.reduce((s,i)=>s+i.amount,0);if(!fixedExpenses.length){c.innerHTML='<div class="empty-state"><span class="material-icons-round">info</span><p>固定費なし</p></div>';return}c.innerHTML=`<div class="alert alert-info" style="margin-bottom:10px"><span class="material-icons-round">calculate</span><span>合計: ¥${total.toLocaleString()}/月</span></div>`;fixedExpenses.forEach((item,idx)=>{const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">sync</span></div><div class="data-item-info"><div class="data-item-title">${item.name} <span class="data-item-badge badge-fixed">${item.category}</span></div><div class="data-item-subtitle">${item.start||item.end?`${item.start||'開始'}〜${item.end||'継続'}`:'常時'}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{fixedExpenses.splice(idx,1);saveData();renderFixedList();calculateSimulation()},()=>showFixedModal(idx));c.appendChild(el)})}
-function renderInstallmentList(){const c=document.getElementById('installmentList');if(!installments.length){c.innerHTML='<div class="empty-state"><p>データなし</p></div>';return}c.innerHTML='';installments.forEach((item,idx)=>{const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">credit_card</span></div><div class="data-item-info"><div class="data-item-title">${item.name}</div><div class="data-item-subtitle">${item.start}〜 ${item.count}回${item.memo?' ・'+item.memo:''}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}/月</div></div></div>`,()=>{installments.splice(idx,1);saveData();renderInstallmentList();calculateSimulation()},()=>showInstallmentModal(idx));c.appendChild(el)})}
-function renderRecurringList(){const c=document.getElementById('recurringList');if(!recurring.length){c.innerHTML='<div class="empty-state"><p>データなし</p></div>';return}c.innerHTML='';recurring.forEach((item,idx)=>{const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">event_repeat</span></div><div class="data-item-info"><div class="data-item-title">${item.name}</div><div class="data-item-subtitle">${item.start}〜 ${item.interval}ヶ月毎×${item.count}回</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{recurring.splice(idx,1);saveData();renderRecurringList();calculateSimulation()},()=>showRecurringModal(idx));c.appendChild(el)})}
-function renderLargeList(){const c=document.getElementById('largeList');if(!largeExpenses.length){c.innerHTML='<div class="empty-state"><p>データなし</p></div>';return}c.innerHTML='';const sorted=[...largeExpenses].sort((a,b)=>{const[ay,am]=a.date.split('/').map(Number),[by,bm]=b.date.split('/').map(Number);return(ay*12+am)-(by*12+bm)});sorted.forEach(item=>{const idx=largeExpenses.indexOf(item);const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">shopping_bag</span></div><div class="data-item-info"><div class="data-item-title">${item.category}</div><div class="data-item-subtitle">${item.date} ${item.memo}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{largeExpenses.splice(idx,1);saveData();renderLargeList();calculateSimulation()},()=>showLargeModal(idx));c.appendChild(el)})}
+function renderIncomeList(){const c=document.getElementById('incomeList');if(!incomePatterns.length){c.innerHTML='<div class="empty-state"><span class="material-icons-round">info</span><p>収入パターンなし</p></div>';return}c.innerHTML='';incomePatterns.forEach((item,idx)=>{const p=item.end?`${item.start}〜${item.end}`:`${item.start}〜`;const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">payments</span></div><div class="data-item-info"><div class="data-item-title">${item.name}</div><div class="data-item-subtitle">${p}${item.memo?' ・'+item.memo:''}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{const backup=[...incomePatterns];incomePatterns.splice(idx,1);saveData();renderIncomeList();calculateSimulation();showUndoBar(item.name,()=>{incomePatterns.splice(idx,0,...backup.slice(idx,idx+1));saveData();renderIncomeList();calculateSimulation()})},()=>showIncomeModal(idx));c.appendChild(el)})}
+function renderFixedList(){const c=document.getElementById('fixedList'),total=fixedExpenses.reduce((s,i)=>s+i.amount,0);if(!fixedExpenses.length){c.innerHTML='<div class="empty-state"><span class="material-icons-round">info</span><p>固定費なし</p></div>';return}c.innerHTML=`<div class="alert alert-info" style="margin-bottom:10px"><span class="material-icons-round">calculate</span><span>合計: ¥${total.toLocaleString()}/月</span></div>`;fixedExpenses.forEach((item,idx)=>{const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">sync</span></div><div class="data-item-info"><div class="data-item-title">${item.name} <span class="data-item-badge badge-fixed">${item.category}</span></div><div class="data-item-subtitle">${item.start||item.end?`${item.start||'開始'}〜${item.end||'継続'}`:'常時'}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{const backup=[...fixedExpenses];fixedExpenses.splice(idx,1);saveData();renderFixedList();calculateSimulation();showUndoBar(item.name,()=>{fixedExpenses.splice(idx,0,...backup.slice(idx,idx+1));saveData();renderFixedList();calculateSimulation()})},()=>showFixedModal(idx));c.appendChild(el)})}
+function renderInstallmentList(){const c=document.getElementById('installmentList');if(!installments.length){c.innerHTML='<div class="empty-state"><p>データなし</p></div>';return}c.innerHTML='';installments.forEach((item,idx)=>{const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">credit_card</span></div><div class="data-item-info"><div class="data-item-title">${item.name}</div><div class="data-item-subtitle">${item.start}〜 ${item.count}回${item.memo?' ・'+item.memo:''}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}/月</div></div></div>`,()=>{const backup=[...installments];installments.splice(idx,1);saveData();renderInstallmentList();calculateSimulation();showUndoBar(item.name,()=>{installments.splice(idx,0,...backup.slice(idx,idx+1));saveData();renderInstallmentList();calculateSimulation()})},()=>showInstallmentModal(idx));c.appendChild(el)})}
+function renderRecurringList(){const c=document.getElementById('recurringList');if(!recurring.length){c.innerHTML='<div class="empty-state"><p>データなし</p></div>';return}c.innerHTML='';recurring.forEach((item,idx)=>{const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">event_repeat</span></div><div class="data-item-info"><div class="data-item-title">${item.name}</div><div class="data-item-subtitle">${item.start}〜 ${item.interval}ヶ月毎×${item.count}回</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{const backup=[...recurring];recurring.splice(idx,1);saveData();renderRecurringList();calculateSimulation();showUndoBar(item.name,()=>{recurring.splice(idx,0,...backup.slice(idx,idx+1));saveData();renderRecurringList();calculateSimulation()})},()=>showRecurringModal(idx));c.appendChild(el)})}
+function renderLargeList(){const c=document.getElementById('largeList');if(!largeExpenses.length){c.innerHTML='<div class="empty-state"><p>データなし</p></div>';return}c.innerHTML='';const sorted=[...largeExpenses].sort((a,b)=>{const[ay,am]=a.date.split('/').map(Number),[by,bm]=b.date.split('/').map(Number);return(ay*12+am)-(by*12+bm)});sorted.forEach(item=>{const idx=largeExpenses.indexOf(item);const el=createSwipeItem(`<div class="data-item"><div class="data-item-icon"><span class="material-icons-round">shopping_bag</span></div><div class="data-item-info"><div class="data-item-title">${item.category}</div><div class="data-item-subtitle">${item.date} ${item.memo}</div></div><div class="data-item-trailing"><div class="data-item-amount">¥${item.amount.toLocaleString()}</div></div></div>`,()=>{const backup=[...largeExpenses];largeExpenses.splice(idx,1);saveData();renderLargeList();calculateSimulation();showUndoBar(item.category,()=>{largeExpenses.splice(idx,0,...backup.slice(idx,idx+1));saveData();renderLargeList();calculateSimulation()})},()=>showLargeModal(idx));c.appendChild(el)})}
 function showIncomeModal(idx=-1){currentEditIndex=idx;const m=document.getElementById('incomeModal');if(idx>=0){const i=incomePatterns[idx];document.getElementById('modalIncomeName').value=i.name;document.getElementById('modalIncomeAmount').value=i.amount;document.getElementById('modalIncomeStart').value=i.start;document.getElementById('modalIncomeEnd').value=i.end||'';document.getElementById('modalIncomeMemo').value=i.memo||''}else{['modalIncomeName','modalIncomeAmount','modalIncomeStart','modalIncomeEnd','modalIncomeMemo'].forEach(id=>document.getElementById(id).value='')}m.classList.add('active')}
 function saveIncome(){const n=document.getElementById('modalIncomeName').value,a=parseInt(document.getElementById('modalIncomeAmount').value)||0,s=document.getElementById('modalIncomeStart').value,e=document.getElementById('modalIncomeEnd').value,m=document.getElementById('modalIncomeMemo').value;if(!n||!s){showSnackbar('名前と開始月を入力');return}const item={name:n,amount:a,start:s,end:e,memo:m};if(currentEditIndex>=0)incomePatterns[currentEditIndex]=item;else incomePatterns.push(item);saveData();renderIncomeList();calculateSimulation();closeModal('incomeModal');showSnackbar(currentEditIndex>=0?'更新しました':'追加しました')}
 function showFixedModal(idx=-1){currentEditIndex=idx;const m=document.getElementById('fixedModal');if(idx>=0){const i=fixedExpenses[idx];document.getElementById('modalFixedName').value=i.name;document.getElementById('modalFixedAmount').value=i.amount;document.getElementById('modalFixedCategory').value=i.category;document.getElementById('modalFixedStart').value=i.start||'';document.getElementById('modalFixedEnd').value=i.end||''}else{document.getElementById('modalFixedName').value='';document.getElementById('modalFixedAmount').value='';document.getElementById('modalFixedCategory').value='その他';document.getElementById('modalFixedStart').value='';document.getElementById('modalFixedEnd').value=''}m.classList.add('active')}
