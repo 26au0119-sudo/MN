@@ -326,6 +326,10 @@
         .sync-banner .material-icons-round{font-size:16px}
         .budget-item-card.synced{border-left:3px solid var(--md-sys-color-primary)}
         .budget-item-card.manual{border-left:3px solid var(--md-sys-color-secondary)}
+
+        .budget-pocket-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(255,255,255,.2);margin-top:10px;font-size:12px;opacity:.9}
+        .budget-pocket-row .material-icons-round{font-size:15px;margin-right:4px;vertical-align:middle}
+        .budget-pocket-actual{background:rgba(255,255,255,.15);border-radius:10px;padding:6px 10px;margin-top:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center}
     </style>
 </head>
 <body>
@@ -658,7 +662,19 @@ function renderBudget(){
   }
   // 概要カード
   const ov=document.getElementById('budgetOverviewCard');
+  // 実績ベースの積立計算（月間予算 - 実際の支出合計）
+  let actualBudgetSaved = 0, actualBudgetMonths = 0;
+  generateMonths().forEach(m => {
+    const d = actualData[m.key];
+    if(!d || !d.balance) return;
+    const expTotal = Object.values(d.expenses||{}).reduce((s,v)=>s+v,0)
+                   + (d.unplanned||[]).reduce((s,u)=>s+u.amount,0);
+    const saved = total - expTotal;
+    if(saved > 0){ actualBudgetSaved += saved; actualBudgetMonths++; }
+  });
+
   if(ov&&total>0){
+    const plannedSaved = Math.max(0, remain); // 予定ベース：総額 - 割当合計
     ov.innerHTML=`<div class="budget-overview">
       <h2>月間予算</h2>
       <div class="budget-total">¥${total.toLocaleString()}</div>
@@ -667,6 +683,14 @@ function renderBudget(){
         <span>割当済 ¥${allocated.toLocaleString()}</span>
         <span>${overAll?'<span style="color:#FFCDD2">超過 ¥'+(allocated-total).toLocaleString()+'</span>':'残り ¥'+remain.toLocaleString()}</span>
       </div>
+      <div class="budget-pocket-row">
+        <span><span class="material-icons-round">savings</span>予定ベース積立/月</span>
+        <span style="font-weight:700">${plannedSaved>0?'¥'+plannedSaved.toLocaleString():'割当超過'}</span>
+      </div>
+      ${actualBudgetMonths>0?`<div class="budget-pocket-actual">
+        <span><span class="material-icons-round" style="font-size:14px;vertical-align:middle">fact_check</span>実績ベース積立累計（${actualBudgetMonths}ヶ月）</span>
+        <span style="font-weight:700">¥${actualBudgetSaved.toLocaleString()}</span>
+      </div>`:''}
     </div>`;
   } else if(ov){
     ov.innerHTML='';
@@ -683,23 +707,18 @@ function renderBudget(){
     const pct2=item.amount>0&&total>0?Math.min((item.amount/total)*100,100):0;
     const ratio=total>0?(item.amount/total)*100:0;
     const cls=ratio>80?'over':ratio>60?'warn':'ok';
-    const div=document.createElement('div');
-    div.className='budget-item-card'+(item.fromFixed?' synced':' manual');
-    div.innerHTML=`
+    const inner=`<div class="budget-item-card${item.fromFixed?' synced':' manual'}">
       <div class="budget-item-header">
-        <div class="budget-item-name">${item.name}</div>
+        <div class="budget-item-name">${item.name}${item.fromFixed?'<span class="reserve-source-badge" style="margin-left:6px">固定費</span>':''}</div>
         <div class="budget-item-amounts">
           <div class="budget-item-limit">上限 ¥${item.amount.toLocaleString()}</div>
           <div class="budget-item-remain ${cls}">${total>0?(ratio.toFixed(0)+'%'):'–'}</div>
         </div>
       </div>
-      <div class="budget-mini-bar"><div class="budget-mini-fill ${cls}" style="width:${pct2}%"></div></div>`;
-    div.addEventListener('click',()=>showBudgetItemModal(idx));
-    // 長押し削除
-    let pressTimer;
-    div.addEventListener('touchstart',()=>{pressTimer=setTimeout(()=>{if(confirm(item.name+'を削除しますか？')){const backup=[...budgetItems];budgetItems.splice(idx,1);saveData();renderBudget();showUndoBar(item.name,()=>{budgetItems.splice(idx,0,...backup.slice(idx,idx+1));saveData();renderBudget()})}},600)});
-    div.addEventListener('touchend',()=>clearTimeout(pressTimer));
-    c.appendChild(div);
+      <div class="budget-mini-bar"><div class="budget-mini-fill ${cls}" style="width:${pct2}%"></div></div>
+    </div>`;
+    const el=createSwipeItem(inner,()=>{const backup=[...budgetItems];budgetItems.splice(idx,1);saveData();renderBudget();showUndoBar(item.name,()=>{budgetItems.splice(idx,0,...backup.slice(idx,idx+1));saveData();renderBudget()})},()=>showBudgetItemModal(idx));
+    c.appendChild(el);
   });
 }
 function showBudgetItemModal(idx=-1){
@@ -911,21 +930,30 @@ function updateReserveSaved(planned){
 
 // ===== 予備費ポケット表示 =====
 function calcActualReservePocket(){
-  // 実績月の予備費実際積立累計を計算
+  // 実績月の積立累計（予備費 + 月間予算の残り）
   let total = 0;
   const months = generateMonths();
   months.forEach(m => {
     const d = actualData[m.key];
+    if(!d || !d.balance) return; // 実績未入力月はスキップ
+
+    // 予備費ポケット分
     const planned = calcReserve(m.key);
-    if(planned <= 0) return;
-    if(d && d.reserveUsed !== undefined){
-      // 実績あり: 積立 = 予定 - 使用
-      total += Math.max(0, planned - d.reserveUsed);
-    } else if(d && d.balance){
-      // 実績月だが予備費未入力: 予定全額積立とみなす
-      total += planned;
+    if(planned > 0){
+      if(d.reserveUsed !== undefined){
+        total += Math.max(0, planned - d.reserveUsed);
+      } else {
+        total += planned;
+      }
     }
-    // 未来月はcalculateSimulationで計算済みのtotalReserveに任せる
+
+    // 月間予算の残り分（総額 - 実際の支出合計）
+    if(monthlyBudget > 0){
+      const expTotal = Object.values(d.expenses||{}).reduce((s,v)=>s+v,0)
+                     + (d.unplanned||[]).reduce((s,u)=>s+u.amount,0);
+      const budgetSaved = monthlyBudget - expTotal;
+      if(budgetSaved > 0) total += budgetSaved;
+    }
   });
   return total;
 }
@@ -954,7 +982,7 @@ function displayReserveCard(results, totalReserve){
 
   card.innerHTML = `
     <div class="reserve-card">
-      <div class="reserve-card-label"><span class="material-icons-round">savings</span>予備費ポケット（期間累計）</div>
+      <div class="reserve-card-label"><span class="material-icons-round">savings</span>予備費ポケット＋月間予算残り（期間累計）</div>
       <div class="reserve-card-title">¥${totalReserve.toLocaleString()}</div>
       ${calcActualReservePocket()>0?`<div style="font-size:12px;opacity:.8;margin-bottom:4px">うち実績ベース積立 ¥${calcActualReservePocket().toLocaleString()}</div>`:''}
       <div class="budget-bar-wrap"><div class="budget-bar-fill" style="width:100%"></div></div>
