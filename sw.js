@@ -1,69 +1,58 @@
-const CACHE_NAME = 'moneyplan-v1';
-const STATIC_ASSETS = [
-  './index.html',
-  './manifest.json'
+const CACHE_NAME = 'moneyplan-v5';
+
+const CDN_ORIGINS = [
+  'https://cdn.jsdelivr.net',
+  'https://fonts.googleapis.com',
+  'https://fonts.gstatic.com'
 ];
 
-// CDNリソース（Chart.js、Google Fonts）
-const CDN_ASSETS = [
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
-  'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap',
-  'https://fonts.googleapis.com/icon?family=Material+Icons+Round'
-];
-
-// インストール：静的アセットをキャッシュ
+// インストール：即座にアクティベート
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
-// アクティベート：古いキャッシュを削除
+// アクティベート：古いキャッシュを全削除
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
-      )
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
 // フェッチ戦略
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+  const isCDN = CDN_ORIGINS.some(o => event.request.url.startsWith(o));
 
-  // CDNリソース：Cache First（まずキャッシュ、なければネット取得してキャッシュ保存）
-  const isCDN = CDN_ASSETS.some(asset => event.request.url.startsWith(new URL(asset).origin));
-  if (isCDN || url.hostname !== self.location.hostname) {
+  if (isCDN) {
+    // CDN: Cache First（フォント・ライブラリは変わらないため）
     event.respondWith(
       caches.match(event.request).then(cached => {
         if (cached) return cached;
         return fetch(event.request).then(response => {
           if (response && response.status === 200) {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+            caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
           }
           return response;
-        }).catch(() => cached);
+        });
       })
     );
     return;
   }
 
-  // ローカルアセット：Cache First
+  // 自サイトのアセット: Network First
+  // → 常にネットワークから最新版を取得。オフライン時のみキャッシュにフォールバック
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
+    fetch(event.request)
+      .then(response => {
         if (response && response.status === 200) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
         }
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
