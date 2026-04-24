@@ -907,9 +907,11 @@ function analyzeGoal(results){
     const[ry,rm]=r.date.split('/').map(Number),[ty2,tm2]=tDate.split('/').map(Number);
     return(ry*12+rm)<=(ty2*12+tm2)
   }).reduce((s,r)=>s+(r.reserve||0),0);
-  const shortfall=target-projected;
+  // 達成判定は「残高 + 予備費ポケット」で行う
+  const effectiveBalance=projected+reserveUpToTarget;
+  const shortfall=target-effectiveBalance;
   const achieved=shortfall<=0;
-  const pct=target>0?Math.min((projected/target)*100,100):0;
+  const pct=target>0?Math.min((effectiveBalance/target)*100,100):0;
 
   // 目標カード
   goalCard.innerHTML=`<div class="goal-card ${achieved?'achieved':'unachieved'}">
@@ -917,11 +919,11 @@ function analyzeGoal(results){
     <div class="goal-card-title">${achieved?'目標達成見込み ✓':'目標まで ¥'+Math.abs(shortfall).toLocaleString()+' 不足'}</div>
     ${reserveUpToTarget>0?`<div style="font-size:12px;opacity:.85;margin-bottom:8px">うち予備費ポケット ¥${reserveUpToTarget.toLocaleString()} 含む</div>`:''}
     <div class="goal-progress-bar"><div class="goal-progress-fill" style="width:${pct}%"></div></div>
-    <div class="goal-meta"><span>目標 ¥${target.toLocaleString()}</span><span>予測 ¥${projected.toLocaleString()} (${pct.toFixed(0)}%)</span></div>
+    <div class="goal-meta"><span>目標 ¥${target.toLocaleString()}</span><span>残高+予備費 ¥${effectiveBalance.toLocaleString()} (${pct.toFixed(0)}%)</span></div>
   </div>`;
 
   if(achieved){
-    const surplus=projected-target;
+    const surplus=effectiveBalance-target;
     analysisCard.innerHTML=`<div class="card"><h2><span class="material-icons-round">insights</span>目標分析</h2>
       <div class="analysis-section">
         <div class="analysis-item">
