@@ -321,6 +321,11 @@
         .reserve-pocket-amount{font-size:16px;font-weight:700;color:#1A237E}
         [data-theme="dark"] .reserve-pocket-amount{color:#8291FF}
         .reserve-used-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:12px;color:var(--md-sys-color-on-surface-variant)}
+
+        .sync-banner{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-on-secondary-container);font-size:12px;font-weight:500;margin-bottom:12px}
+        .sync-banner .material-icons-round{font-size:16px}
+        .budget-item-card.synced{border-left:3px solid var(--md-sys-color-primary)}
+        .budget-item-card.manual{border-left:3px solid var(--md-sys-color-secondary)}
     </style>
 </head>
 <body>
@@ -426,8 +431,12 @@
                 </div>
                 <div class="card">
                     <h2><span class="material-icons-round">category</span>用途の内訳</h2>
+                    <div id="syncStatusBanner"></div>
                     <div id="budgetItemList"></div>
-                    <div class="btn-container"><button class="btn btn-tonal" onclick="showBudgetItemModal()"><span class="material-icons-round">add</span>用途を追加</button></div>
+                    <div class="btn-container">
+                        <button class="btn btn-tonal" onclick="syncFromFixed()"><span class="material-icons-round">sync</span>固定費から同期</button>
+                        <button class="btn btn-tonal" onclick="showBudgetItemModal()"><span class="material-icons-round">add</span>用途を追加</button>
+                    </div>
                 </div>
                 <div class="card">
                     <h2><span class="material-icons-round">sync</span>固定費一覧</h2>
@@ -557,6 +566,66 @@ function toggleTheme(){const h=document.documentElement,d=h.getAttribute('data-t
 function loadTheme(){const s=localStorage.getItem('mp_theme'),p=window.matchMedia('(prefers-color-scheme:dark)').matches,t=s||(p?'dark':'light');document.documentElement.setAttribute('data-theme',t);document.getElementById('themeIcon').textContent=t==='dark'?'light_mode':'dark_mode'}
 
 // ===== 月間予算機能 =====
+// 固定費変更時に同期済み用途だけ自動更新
+function autoResyncBudget(){
+  const hasSynced = budgetItems.some(i => i.fromFixed);
+  if(!hasSynced) return; // 同期したことがない場合は何もしない
+
+  // カテゴリ別集計
+  const catMap = {};
+  fixedExpenses.forEach(i => {
+    const cat = i.category || i.name;
+    catMap[cat] = (catMap[cat] || 0) + i.amount;
+  });
+
+  // 手動用途は保持、固定費由来のみ再生成
+  const manualItems = budgetItems.filter(i => !i.fromFixed);
+  const fixedItems = Object.entries(catMap).map(([name, amount]) => ({name, amount, fromFixed: true}));
+  budgetItems = [...fixedItems, ...manualItems];
+  saveData();
+  renderBudget();
+}
+
+// ===== 固定費 → 月間予算 同期 =====
+function syncFromFixed(){
+  if(!fixedExpenses.length){
+    showSnackbar('固定費が登録されていません');
+    return;
+  }
+
+  // カテゴリ別に固定費を集計
+  const catMap = {};
+  fixedExpenses.forEach(i => {
+    const cat = i.category || i.name;
+    catMap[cat] = (catMap[cat] || 0) + i.amount;
+  });
+
+  // 既存の手動追加用途（固定費由来でないもの）を保持
+  const manualItems = budgetItems.filter(i => !i.fromFixed);
+
+  // 固定費由来の新しい用途リストを生成
+  const fixedItems = Object.entries(catMap).map(([name, amount]) => ({
+    name,
+    amount,
+    fromFixed: true
+  }));
+
+  // 結合（固定費由来を先頭に）
+  budgetItems = [...fixedItems, ...manualItems];
+
+  // 月間予算合計を固定費合計に自動更新（未設定の場合のみ）
+  const fixedTotal = fixedExpenses.reduce((s, i) => s + i.amount, 0);
+  if(!monthlyBudget || monthlyBudget === 0){
+    monthlyBudget = fixedTotal;
+    const inp = document.getElementById('monthlyBudgetInput');
+    if(inp) inp.value = monthlyBudget;
+  }
+
+  saveData();
+  renderBudget();
+  showSnackbar('固定費から' + fixedItems.length + '件を同期しました');
+}
+
 function saveBudgetTotal(){
   monthlyBudget=parseInt(document.getElementById('monthlyBudgetInput').value)||0;
   saveData();
@@ -565,6 +634,17 @@ function saveBudgetTotal(){
 function renderBudget(){
   const input=document.getElementById('monthlyBudgetInput');
   if(input)input.value=monthlyBudget||'';
+  // 同期状態バナー
+  const syncBanner=document.getElementById('syncStatusBanner');
+  if(syncBanner){
+    const syncedCount=budgetItems.filter(i=>i.fromFixed).length;
+    const manualCount=budgetItems.filter(i=>!i.fromFixed).length;
+    if(syncedCount>0){
+      syncBanner.innerHTML=`<div class="sync-banner"><span class="material-icons-round">link</span>固定費から${syncedCount}件同期済み${manualCount>0?' ・ 手動追加'+manualCount+'件':''}</div>`;
+    } else {
+      syncBanner.innerHTML='';
+    }
+  }
   const total=monthlyBudget;
   const allocated=budgetItems.reduce((s,i)=>s+i.amount,0);
   const fixedTotal=fixedExpenses.reduce((s,i)=>s+i.amount,0);
@@ -604,7 +684,7 @@ function renderBudget(){
     const ratio=total>0?(item.amount/total)*100:0;
     const cls=ratio>80?'over':ratio>60?'warn':'ok';
     const div=document.createElement('div');
-    div.className='budget-item-card';
+    div.className='budget-item-card'+(item.fromFixed?' synced':' manual');
     div.innerHTML=`
       <div class="budget-item-header">
         <div class="budget-item-name">${item.name}</div>
@@ -731,7 +811,7 @@ function renderLargeList(){const c=document.getElementById('largeList');if(!larg
 function showIncomeModal(idx=-1){currentEditIndex=idx;const m=document.getElementById('incomeModal');if(idx>=0){const i=incomePatterns[idx];document.getElementById('modalIncomeName').value=i.name;document.getElementById('modalIncomeAmount').value=i.amount;document.getElementById('modalIncomeStart').value=i.start;document.getElementById('modalIncomeEnd').value=i.end||'';document.getElementById('modalIncomeMemo').value=i.memo||''}else{['modalIncomeName','modalIncomeAmount','modalIncomeStart','modalIncomeEnd','modalIncomeMemo'].forEach(id=>document.getElementById(id).value='')}m.classList.add('active')}
 function saveIncome(){const n=document.getElementById('modalIncomeName').value,a=parseInt(document.getElementById('modalIncomeAmount').value)||0,s=document.getElementById('modalIncomeStart').value,e=document.getElementById('modalIncomeEnd').value,m=document.getElementById('modalIncomeMemo').value;if(!n||!s){showSnackbar('名前と開始月を入力');return}const item={name:n,amount:a,start:s,end:e,memo:m};if(currentEditIndex>=0)incomePatterns[currentEditIndex]=item;else incomePatterns.push(item);saveData();renderIncomeList();calculateSimulation();closeModal('incomeModal');showSnackbar(currentEditIndex>=0?'更新しました':'追加しました')}
 function showFixedModal(idx=-1){currentEditIndex=idx;const m=document.getElementById('fixedModal');if(idx>=0){const i=fixedExpenses[idx];document.getElementById('modalFixedName').value=i.name;document.getElementById('modalFixedAmount').value=i.amount;document.getElementById('modalFixedCategory').value=i.category;document.getElementById('modalFixedStart').value=i.start||'';document.getElementById('modalFixedEnd').value=i.end||''}else{document.getElementById('modalFixedName').value='';document.getElementById('modalFixedAmount').value='';document.getElementById('modalFixedCategory').value='その他';document.getElementById('modalFixedStart').value='';document.getElementById('modalFixedEnd').value=''}m.classList.add('active')}
-function saveFixed(){const n=document.getElementById('modalFixedName').value,a=parseInt(document.getElementById('modalFixedAmount').value)||0,cat=document.getElementById('modalFixedCategory').value,s=document.getElementById('modalFixedStart').value,e=document.getElementById('modalFixedEnd').value;if(!n){showSnackbar('項目名を入力');return}const item={name:n,amount:a,category:cat,start:s,end:e};if(currentEditIndex>=0)fixedExpenses[currentEditIndex]=item;else fixedExpenses.push(item);saveData();renderFixedList();calculateSimulation();closeModal('fixedModal');showSnackbar(currentEditIndex>=0?'更新しました':'追加しました')}
+function saveFixed(){const n=document.getElementById('modalFixedName').value,a=parseInt(document.getElementById('modalFixedAmount').value)||0,cat=document.getElementById('modalFixedCategory').value,s=document.getElementById('modalFixedStart').value,e=document.getElementById('modalFixedEnd').value;if(!n){showSnackbar('項目名を入力');return}const item={name:n,amount:a,category:cat,start:s,end:e};if(currentEditIndex>=0)fixedExpenses[currentEditIndex]=item;else fixedExpenses.push(item);saveData();renderFixedList();calculateSimulation();closeModal('fixedModal');showSnackbar(currentEditIndex>=0?'更新しました':'追加しました');autoResyncBudget()}
 function showInstallmentModal(idx=-1){currentEditIndex=idx;const m=document.getElementById('installmentModal');if(idx>=0){const i=installments[idx];document.getElementById('modalInstName').value=i.name;document.getElementById('modalInstTotal').value=i.amount*i.count;document.getElementById('modalInstCount').value=i.count;document.getElementById('modalInstAmount').value=i.amount;document.getElementById('modalInstStart').value=i.start;document.getElementById('modalInstMemo').value=i.memo||''}else{['modalInstName','modalInstTotal','modalInstCount','modalInstAmount','modalInstStart','modalInstMemo'].forEach(id=>document.getElementById(id).value='')}m.classList.add('active')}
 function calcInstMonthly(){const t=parseInt(document.getElementById('modalInstTotal').value)||0,c=parseInt(document.getElementById('modalInstCount').value)||1;document.getElementById('modalInstAmount').value=Math.ceil(t/c)}
 function saveInstallment(){const n=document.getElementById('modalInstName').value,a=parseInt(document.getElementById('modalInstAmount').value)||0,c=parseInt(document.getElementById('modalInstCount').value)||1,s=document.getElementById('modalInstStart').value,m=document.getElementById('modalInstMemo').value;if(!n||!s){showSnackbar('品名と開始月を入力');return}const item={name:n,amount:a,count:c,start:s,memo:m};if(currentEditIndex>=0)installments[currentEditIndex]=item;else installments.push(item);saveData();renderInstallmentList();calculateSimulation();closeModal('installmentModal');showSnackbar(currentEditIndex>=0?'更新しました':'追加しました')}
