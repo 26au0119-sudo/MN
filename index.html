@@ -304,6 +304,23 @@
         .analysis-amount{font-size:13px;font-weight:700;white-space:nowrap;color:var(--color-negative)}
         .analysis-amount.ok{color:var(--color-positive)}
         .suggestion-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:100px;background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container);font-size:11px;font-weight:600;margin-top:6px;margin-right:4px}
+
+        .reserve-card{background:linear-gradient(135deg,#1A237E,#283593);border-radius:20px;padding:18px;margin-bottom:14px;color:#fff}
+        .reserve-card-label{font-size:12px;font-weight:500;opacity:.8;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+        .reserve-card-label .material-icons-round{font-size:16px}
+        .reserve-card-title{font-size:26px;font-weight:700;margin-bottom:12px}
+        .reserve-card-row{display:flex;justify-content:space-between;font-size:12px;opacity:.85;margin-top:6px}
+        .reserve-source-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--md-sys-color-outline-variant);font-size:13px}
+        .reserve-source-row:last-child{border-bottom:none}
+        .reserve-source-badge{font-size:10px;padding:2px 7px;border-radius:100px;background:var(--md-sys-color-secondary-container);color:var(--md-sys-color-secondary);font-weight:600;margin-left:6px}
+
+        .reserve-pocket-banner{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,rgba(26,35,126,.12),rgba(40,53,147,.08));border:1px solid rgba(26,35,126,.2);margin-bottom:12px}
+        [data-theme="dark"] .reserve-pocket-banner{background:linear-gradient(135deg,rgba(130,145,255,.15),rgba(100,115,220,.1));border-color:rgba(130,145,255,.3)}
+        .reserve-pocket-label{font-size:12px;color:var(--md-sys-color-on-surface-variant);display:flex;align-items:center;gap:5px}
+        .reserve-pocket-label .material-icons-round{font-size:15px}
+        .reserve-pocket-amount{font-size:16px;font-weight:700;color:#1A237E}
+        [data-theme="dark"] .reserve-pocket-amount{color:#8291FF}
+        .reserve-used-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:12px;color:var(--md-sys-color-on-surface-variant)}
     </style>
 </head>
 <body>
@@ -389,6 +406,7 @@
                 </div>
                 <div id="warningAlert" class="alert alert-error" style="display:none"><span class="material-icons-round">warning</span><span>残高がマイナスになる月があります</span></div>
                 <div id="goalCard"></div>
+                <div id="reserveCard"></div>
                 <div id="analysisCard"></div>
                 <div class="card"><h2><span class="material-icons-round">show_chart</span>貯金推移</h2><div class="chart-container"><canvas id="savingsChart"></canvas></div></div>
                 <div class="card"><h2><span class="material-icons-round">table_chart</span>月次詳細</h2><div class="table-container"><div id="simulationTable"></div></div></div>
@@ -438,6 +456,7 @@
                     <div class="form-group"><label>月末の貯金残高</label><div class="input-wrapper"><input type="number" id="actualBalance" inputmode="numeric" placeholder="0"><span class="unit">円</span></div></div>
                 </div>
                 <div class="card"><h2><span class="material-icons-round">checklist</span>計画済み支出</h2><div id="plannedExpensesList"></div></div>
+                <div id="reserveActualCard"></div>
                 <div class="card">
                     <h2><span class="material-icons-round">warning_amber</span>予定外支出</h2>
                     <div id="unplannedList"></div>
@@ -454,6 +473,7 @@
                     <div class="summary-card"><h3>差額</h3><div class="value" id="compareDiff">-</div><div class="sub-value" id="compareDiffPercent"></div></div>
                     <div class="summary-card actual"><h3>予定外計</h3><div class="value" id="totalUnplanned">¥0</div></div>
                 </div>
+                <div id="reservePocketSummary"></div>
                 <div class="card"><h2><span class="material-icons-round">show_chart</span>予実比較</h2><div class="chart-container"><canvas id="compareChart"></canvas></div></div>
                 <div class="card"><h2><span class="material-icons-round">compare_arrows</span>月別詳細</h2><div class="month-selector"><select id="compareMonth" onchange="loadCompareMonth()"></select></div><div id="compareDetails"></div></div>
                 <div class="card"><h2><span class="material-icons-round">receipt_long</span>予定外一覧</h2><div id="allUnplannedList"></div></div>
@@ -731,16 +751,145 @@ function attachDraftListeners(){const fields=document.querySelectorAll('#actual 
 function hasDraftForMonth(mk){const d=draftData[mk];if(!d)return false;if(d.income||d.balance)return true;return Object.values(d.expenses||{}).some(v=>v!=='')}
 function discardDraft(mk){if(!mk)mk=document.getElementById('actualMonth').value;delete draftData[mk];saveDraftToStorage();updateDraftIndicators();loadActualMonth();showSnackbar('下書きを破棄しました')}
 function updateDraftIndicators(){const mk=document.getElementById('actualMonth').value;const banner=document.getElementById('draftBanner');if(mk&&hasDraftForMonth(mk)){const ad=actualData[mk];const isNew=!ad||(!ad.income&&!ad.balance&&!Object.keys(ad.expenses||{}).length);banner.innerHTML=`<div class="draft-banner"><span class="material-icons-round">edit_note</span><span>${isNew?'未保存の下書きがあります':'下書きの変更があります'}</span><div class="draft-banner-actions"><button class="btn-discard" onclick="discardDraft()">破棄</button></div></div>`}else{banner.innerHTML=''}}
-function loadActualMonth(){const mk=document.getElementById('actualMonth').value;if(!mk)return;const d=actualData[mk]||{income:0,balance:0,expenses:{},unplanned:[]};const draft=draftData[mk];if(draft&&hasDraftForMonth(mk)){document.getElementById('actualIncome').value=draft.income||'';document.getElementById('actualBalance').value=draft.balance||''}else{document.getElementById('actualIncome').value=d.income||'';document.getElementById('actualBalance').value=d.balance||''}renderPlannedExpenses(mk,d);if(draft&&hasDraftForMonth(mk)){const exps=getPlannedExpensesForMonth(mk);exps.forEach(e=>{const inp=document.getElementById('exp_'+e.id);if(inp&&draft.expenses&&draft.expenses[e.id]!==undefined){inp.value=draft.expenses[e.id];if(draft.expenses[e.id]!=='')updateDiff(e.id,e.amount)}})}renderUnplannedList(mk);updateDraftIndicators();setTimeout(attachDraftListeners,50)}
+function loadActualMonth(){const mk=document.getElementById('actualMonth').value;if(!mk)return;const d=actualData[mk]||{income:0,balance:0,expenses:{},unplanned:[]};const draft=draftData[mk];if(draft&&hasDraftForMonth(mk)){document.getElementById('actualIncome').value=draft.income||'';document.getElementById('actualBalance').value=draft.balance||''}else{document.getElementById('actualIncome').value=d.income||'';document.getElementById('actualBalance').value=d.balance||''}renderPlannedExpenses(mk,d);if(draft&&hasDraftForMonth(mk)){const exps=getPlannedExpensesForMonth(mk);exps.forEach(e=>{const inp=document.getElementById('exp_'+e.id);if(inp&&draft.expenses&&draft.expenses[e.id]!==undefined){inp.value=draft.expenses[e.id];if(draft.expenses[e.id]!=='')updateDiff(e.id,e.amount)}})}renderUnplannedList(mk);renderReserveActualCard(mk,d);updateDraftIndicators();setTimeout(attachDraftListeners,50)}
 function renderPlannedExpenses(mk,d){const c=document.getElementById('plannedExpensesList'),exps=getPlannedExpensesForMonth(mk);if(!exps.length){c.innerHTML='<p style="color:var(--md-sys-color-outline)">この月の計画済み支出なし</p>';return}c.innerHTML=exps.map(e=>{const act=d.expenses[e.id]!==undefined?d.expenses[e.id]:'',diff=act!==''?e.amount-act:0,dc=act!==''?(diff>0?'positive':diff<0?'negative':''):'';return`<div class="form-group"><label>${e.name} (予: ¥${e.amount.toLocaleString()})</label><div class="input-wrapper"><input type="number" id="exp_${e.id}" value="${act}" inputmode="numeric" placeholder="実績" onchange="updateDiff('${e.id}',${e.amount})"><span class="unit">円</span><span id="diff_${e.id}" class="${dc}" style="min-width:65px;text-align:right;font-size:12px">${act!==''?(diff>=0?'+':'')+'¥'+diff.toLocaleString():''}</span></div></div>`}).join('')}
 function updateDiff(id,p){const inp=document.getElementById('exp_'+id),dif=document.getElementById('diff_'+id),v=inp.value!==''?parseInt(inp.value):null;if(v!==null){const d=p-v;dif.className=d>0?'positive':d<0?'negative':'';dif.textContent=(d>=0?'+':'')+'¥'+d.toLocaleString()}else{dif.className='';dif.textContent=''}}
 function getPlannedExpensesForMonth(mk){const exps=[],[ty,tm]=mk.split('/').map(Number),tnum=ty*12+tm;fixedExpenses.forEach((i,idx)=>{let ok=true;if(i.start){const[y,m]=i.start.split('/').map(Number);if(tnum<y*12+m)ok=false}if(i.end){const[y,m]=i.end.split('/').map(Number);if(tnum>y*12+m)ok=false}if(ok)exps.push({id:'f'+idx,name:i.name,amount:i.amount})});installments.forEach((i,idx)=>{const[sy,sm]=i.start.split('/').map(Number),snum=sy*12+sm;if(tnum>=snum&&tnum<=snum+i.count-1)exps.push({id:'i'+idx,name:i.name+'(分割)',amount:i.amount})});recurring.forEach((i,idx)=>{const[sy,sm]=i.start.split('/').map(Number),d=tnum-(sy*12+sm);if(d>=0&&d%i.interval===0&&d/i.interval<i.count)exps.push({id:'r'+idx,name:i.name+'(定期)',amount:i.amount})});largeExpenses.forEach((i,idx)=>{if(i.date===mk)exps.push({id:'l'+idx,name:i.category+':'+i.memo,amount:i.amount})});return exps}
-function saveActualData(){const mk=document.getElementById('actualMonth').value;if(!mk)return;const inc=parseInt(document.getElementById('actualIncome').value)||0,bal=parseInt(document.getElementById('actualBalance').value)||0;if(!actualData[mk])actualData[mk]={income:0,balance:0,expenses:{},unplanned:[]};actualData[mk].income=inc;actualData[mk].balance=bal;getPlannedExpensesForMonth(mk).forEach(e=>{const inp=document.getElementById('exp_'+e.id);if(inp&&inp.value!=='')actualData[mk].expenses[e.id]=parseInt(inp.value)||0});saveData();delete draftData[mk];saveDraftToStorage();updateDraftIndicators();showSnackbar('保存しました');if(simMode==='actual')calculateSimulation()}
+function saveActualData(){const mk=document.getElementById('actualMonth').value;if(!mk)return;const inc=parseInt(document.getElementById('actualIncome').value)||0,bal=parseInt(document.getElementById('actualBalance').value)||0;if(!actualData[mk])actualData[mk]={income:0,balance:0,expenses:{},unplanned:[]};actualData[mk].income=inc;actualData[mk].balance=bal;getPlannedExpensesForMonth(mk).forEach(e=>{const inp=document.getElementById('exp_'+e.id);if(inp&&inp.value!=='')actualData[mk].expenses[e.id]=parseInt(inp.value)||0});const ruInp=document.getElementById('reserveUsedInput');if(ruInp&&ruInp.value!=='')actualData[mk].reserveUsed=parseInt(ruInp.value)||0;else if(ruInp&&ruInp.value==='')delete actualData[mk].reserveUsed;saveData();delete draftData[mk];saveDraftToStorage();updateDraftIndicators();showSnackbar('保存しました');if(simMode==='actual')calculateSimulation()}
 function calcIncome(mk){const[ty,tm]=mk.split('/').map(Number),tnum=ty*12+tm;return incomePatterns.reduce((s,p)=>{const[sy,sm]=p.start.split('/').map(Number);let en=Infinity;if(p.end){const[ey,em]=p.end.split('/').map(Number);en=ey*12+em}return tnum>=sy*12+sm&&tnum<=en?s+p.amount:s},0)}
 function calcFixed(mk){const[ty,tm]=mk.split('/').map(Number),tnum=ty*12+tm;return fixedExpenses.reduce((s,i)=>{let ok=true;if(i.start){const[y,m]=i.start.split('/').map(Number);if(tnum<y*12+m)ok=false}if(i.end){const[y,m]=i.end.split('/').map(Number);if(tnum>y*12+m)ok=false}return ok?s+i.amount:s},0)}
+function calcReserve(mk){
+  // 固定費「予備費」カテゴリの合計
+  const[ty,tm]=mk.split('/').map(Number),tnum=ty*12+tm;
+  const fromFixed=fixedExpenses.filter(i=>i.category==='予備費').reduce((s,i)=>{
+    let ok=true;
+    if(i.start){const[y,m]=i.start.split('/').map(Number);if(tnum<y*12+m)ok=false}
+    if(i.end){const[y,m]=i.end.split('/').map(Number);if(tnum>y*12+m)ok=false}
+    return ok?s+i.amount:s
+  },0);
+  // 月間予算用途「予備費」の合計
+  const fromBudget=budgetItems.filter(i=>i.name==='予備費'||i.name.includes('予備')).reduce((s,i)=>s+i.amount,0);
+  return fromFixed+fromBudget;
+}
+function calcFixedExcludingReserve(mk){
+  const[ty,tm]=mk.split('/').map(Number),tnum=ty*12+tm;
+  return fixedExpenses.filter(i=>i.category!=='予備費').reduce((s,i)=>{
+    let ok=true;
+    if(i.start){const[y,m]=i.start.split('/').map(Number);if(tnum<y*12+m)ok=false}
+    if(i.end){const[y,m]=i.end.split('/').map(Number);if(tnum>y*12+m)ok=false}
+    return ok?s+i.amount:s
+  },0);
+}
 function calcInst(mk){const[ty,tm]=mk.split('/').map(Number),tnum=ty*12+tm;return installments.reduce((s,i)=>{const[sy,sm]=i.start.split('/').map(Number),snum=sy*12+sm;return tnum>=snum&&tnum<=snum+i.count-1?s+i.amount:s},0)}
 function calcRec(mk){const[ty,tm]=mk.split('/').map(Number),tnum=ty*12+tm;return recurring.reduce((s,i)=>{const[sy,sm]=i.start.split('/').map(Number),d=tnum-(sy*12+sm);return d>=0&&d%i.interval===0&&d/i.interval<i.count?s+i.amount:s},0)}
 function calcLarge(mk){return largeExpenses.reduce((s,i)=>i.date===mk?s+i.amount:s,0)}
+// ===== 予備費実績入力カード =====
+function renderReserveActualCard(mk, d){
+  const card = document.getElementById('reserveActualCard');
+  if(!card) return;
+  const planned = calcReserve(mk);
+  if(planned <= 0){ card.innerHTML = ''; return; }
+  const used = d.reserveUsed !== undefined ? d.reserveUsed : '';
+  const saved = used !== '' ? Math.max(0, planned - used) : null;
+  card.innerHTML = `
+    <div class="card">
+      <h2><span class="material-icons-round">savings</span>予備費の実績</h2>
+      <div class="reserve-used-row">
+        <span>今月の予備費（予定）</span>
+        <span style="font-weight:600">¥${planned.toLocaleString()}</span>
+      </div>
+      <div class="form-group" style="margin-top:10px">
+        <label>実際に使った金額</label>
+        <div class="input-wrapper">
+          <input type="number" id="reserveUsedInput" inputmode="numeric" placeholder="0（未使用の場合は0）" value="${used}" oninput="updateReserveSaved(${planned})">
+          <span class="unit">円</span>
+        </div>
+      </div>
+      <div id="reserveSavedResult" style="margin-top:8px">
+        ${saved !== null ? `<div class="reserve-pocket-banner">
+          <div class="reserve-pocket-label"><span class="material-icons-round">savings</span>今月の積立額</div>
+          <div class="reserve-pocket-amount">¥${saved.toLocaleString()}</div>
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+function updateReserveSaved(planned){
+  const inp = document.getElementById('reserveUsedInput');
+  const res = document.getElementById('reserveSavedResult');
+  if(!inp || !res) return;
+  const used = inp.value !== '' ? parseInt(inp.value) || 0 : null;
+  if(used !== null){
+    const saved = Math.max(0, planned - used);
+    res.innerHTML = `<div class="reserve-pocket-banner">
+      <div class="reserve-pocket-label"><span class="material-icons-round">savings</span>今月の積立額</div>
+      <div class="reserve-pocket-amount">¥${saved.toLocaleString()}</div>
+    </div>`;
+  } else {
+    res.innerHTML = '';
+  }
+}
+
+// ===== 予備費ポケット表示 =====
+function calcActualReservePocket(){
+  // 実績月の予備費実際積立累計を計算
+  let total = 0;
+  const months = generateMonths();
+  months.forEach(m => {
+    const d = actualData[m.key];
+    const planned = calcReserve(m.key);
+    if(planned <= 0) return;
+    if(d && d.reserveUsed !== undefined){
+      // 実績あり: 積立 = 予定 - 使用
+      total += Math.max(0, planned - d.reserveUsed);
+    } else if(d && d.balance){
+      // 実績月だが予備費未入力: 予定全額積立とみなす
+      total += planned;
+    }
+    // 未来月はcalculateSimulationで計算済みのtotalReserveに任せる
+  });
+  return total;
+}
+function displayReserveCard(results, totalReserve){
+  const card = document.getElementById('reserveCard');
+  if(!card) return;
+
+  // 予備費の月別ソース一覧
+  const fixedSources = fixedExpenses.filter(i => i.category === '予備費');
+  const budgetSources = budgetItems.filter(i => i.name === '予備費' || i.name.includes('予備'));
+  const hasAny = fixedSources.length > 0 || budgetSources.length > 0;
+
+  if(!hasAny){
+    card.innerHTML = '';
+    return;
+  }
+
+  const monthCount = results.length || 1;
+  const avgPerMonth = Math.round(totalReserve / monthCount);
+
+  // ソース行HTML
+  const sourceRows = [
+    ...fixedSources.map(i => `<div class="reserve-source-row"><span>${i.name}<span class="reserve-source-badge">固定費</span></span><span>¥${i.amount.toLocaleString()}/月</span></div>`),
+    ...budgetSources.map(i => `<div class="reserve-source-row"><span>${i.name}<span class="reserve-source-badge">月間予算</span></span><span>¥${i.amount.toLocaleString()}/月</span></div>`)
+  ].join('');
+
+  card.innerHTML = `
+    <div class="reserve-card">
+      <div class="reserve-card-label"><span class="material-icons-round">savings</span>予備費ポケット（期間累計）</div>
+      <div class="reserve-card-title">¥${totalReserve.toLocaleString()}</div>
+      ${calcActualReservePocket()>0?`<div style="font-size:12px;opacity:.8;margin-bottom:4px">うち実績ベース積立 ¥${calcActualReservePocket().toLocaleString()}</div>`:''}
+      <div class="budget-bar-wrap"><div class="budget-bar-fill" style="width:100%"></div></div>
+      <div class="reserve-card-row"><span>月平均 ¥${avgPerMonth.toLocaleString()}</span><span>${monthCount}ヶ月分</span></div>
+    </div>
+    <div class="card" style="margin-top:-8px">
+      <h2><span class="material-icons-round">account_tree</span>予備費の内訳</h2>
+      ${sourceRows}
+      <div style="font-size:12px;color:var(--md-sys-color-on-surface-variant);margin-top:10px;padding:8px;background:var(--md-sys-color-surface-container);border-radius:8px">
+        <span class="material-icons-round" style="font-size:14px;vertical-align:middle">info</span>
+        予備費は支出として計上されますが、別枠として積み立てとみなしています。実際の残高には含まれています。
+      </div>
+    </div>`;
+}
+
 // ===== 目標貯金分析 =====
 function analyzeGoal(results){
   const goalCard=document.getElementById('goalCard');
@@ -753,6 +902,11 @@ function analyzeGoal(results){
   const tDate=settings.targetDate||settings.endDate;
   const tResult=results.find(r=>r.date===tDate)||results[results.length-1];
   const projected=tResult?tResult.balance:0;
+  // 予備費累計（目標月まで）
+  const reserveUpToTarget=results.filter(r=>{
+    const[ry,rm]=r.date.split('/').map(Number),[ty2,tm2]=tDate.split('/').map(Number);
+    return(ry*12+rm)<=(ty2*12+tm2)
+  }).reduce((s,r)=>s+(r.reserve||0),0);
   const shortfall=target-projected;
   const achieved=shortfall<=0;
   const pct=target>0?Math.min((projected/target)*100,100):0;
@@ -761,6 +915,7 @@ function analyzeGoal(results){
   goalCard.innerHTML=`<div class="goal-card ${achieved?'achieved':'unachieved'}">
     <div class="goal-card-label"><span class="material-icons-round">${achieved?'check_circle':'flag'}</span>${tDate}時点の目標</div>
     <div class="goal-card-title">${achieved?'目標達成見込み ✓':'目標まで ¥'+Math.abs(shortfall).toLocaleString()+' 不足'}</div>
+    ${reserveUpToTarget>0?`<div style="font-size:12px;opacity:.85;margin-bottom:8px">うち予備費ポケット ¥${reserveUpToTarget.toLocaleString()} 含む</div>`:''}
     <div class="goal-progress-bar"><div class="goal-progress-fill" style="width:${pct}%"></div></div>
     <div class="goal-meta"><span>目標 ¥${target.toLocaleString()}</span><span>予測 ¥${projected.toLocaleString()} (${pct.toFixed(0)}%)</span></div>
   </div>`;
@@ -861,11 +1016,11 @@ function analyzeGoal(results){
   analysisCard.innerHTML=`<div class="card"><h2><span class="material-icons-round">analytics</span>原因分析と改善提案</h2><div class="analysis-section">${itemsHTML}</div></div>`;
 }
 
-function calculateSimulation(){const months=generateMonths();let bal=settings.initialSavings,minBal=bal,minDate='',totalExp=0,hasNeg=false;const results=months.map(m=>{let income,expense,balance;const d=actualData[m.key],hasActual=d&&d.balance;if(simMode==='actual'&&hasActual){income=d.income||calcIncome(m.key);const unpTotal=(d.unplanned||[]).reduce((s,u)=>s+u.amount,0);const hasExpEntries=d.expenses&&Object.keys(d.expenses).length>0;expense=hasExpEntries?Object.values(d.expenses).reduce((s,v)=>s+v,0)+unpTotal:calcFixed(m.key)+calcInst(m.key)+calcRec(m.key)+calcLarge(m.key)+unpTotal;balance=d.balance;bal=balance}else{income=calcIncome(m.key);const fix=calcFixed(m.key),inst=calcInst(m.key),rec=calcRec(m.key),large=calcLarge(m.key);expense=fix+inst+rec+large;bal+=income-expense;balance=bal}totalExp+=expense;if(balance<minBal){minBal=balance;minDate=m.key}if(balance<0)hasNeg=true;return{date:m.key,income,fixed:calcFixed(m.key),installment:calcInst(m.key),recurring:calcRec(m.key),large:calcLarge(m.key),monthly:income-expense,balance,isActual:simMode==='actual'&&hasActual}});displaySimulation(results,minBal,minDate,totalExp,hasNeg);displayChart(results);analyzeGoal(results)}
+function calculateSimulation(){const months=generateMonths();let bal=settings.initialSavings,minBal=bal,minDate='',totalExp=0,hasNeg=false,reservePocket=0;const results=months.map(m=>{let income,expense,balance;const reserve=calcReserve(m.key);const d=actualData[m.key],hasActual=d&&d.balance;if(simMode==='actual'&&hasActual){income=d.income||calcIncome(m.key);const unpTotal=(d.unplanned||[]).reduce((s,u)=>s+u.amount,0);const hasExpEntries=d.expenses&&Object.keys(d.expenses).length>0;expense=hasExpEntries?Object.values(d.expenses).reduce((s,v)=>s+v,0)+unpTotal:calcFixed(m.key)+calcInst(m.key)+calcRec(m.key)+calcLarge(m.key)+unpTotal;balance=d.balance;bal=balance}else{income=calcIncome(m.key);const fix=calcFixed(m.key),inst=calcInst(m.key),rec=calcRec(m.key),large=calcLarge(m.key);expense=fix+inst+rec+large;bal+=income-expense;balance=bal}reservePocket+=reserve;totalExp+=expense;if(balance<minBal){minBal=balance;minDate=m.key}if(balance<0)hasNeg=true;return{date:m.key,income,fixed:calcFixed(m.key),installment:calcInst(m.key),recurring:calcRec(m.key),large:calcLarge(m.key),monthly:income-expense,balance,reserve,isActual:simMode==='actual'&&hasActual}});displaySimulation(results,minBal,minDate,totalExp,hasNeg);displayChart(results);displayReserveCard(results,reservePocket);analyzeGoal(results)}
 function displaySimulation(results,minBal,minDate,totalExp,hasNeg){document.getElementById('currentSavings').textContent='¥'+settings.initialSavings.toLocaleString();document.getElementById('finalSavings').textContent='¥'+results[results.length-1].balance.toLocaleString();document.getElementById('minSavings').textContent='¥'+minBal.toLocaleString();document.getElementById('minSavingsDate').textContent=minDate;document.getElementById('totalExpense').textContent='¥'+totalExp.toLocaleString();document.getElementById('warningAlert').style.display=hasNeg?'flex':'none';document.getElementById('minSavingsCard').classList.toggle('warning',hasNeg);document.getElementById('simulationTable').innerHTML=`<table class="table"><thead><tr><th>月</th><th>収入</th><th>固定</th><th>分割</th><th>定期</th><th>大型</th><th>収支</th><th>残高</th></tr></thead><tbody>${results.map(r=>`<tr style="${r.balance<0?'background:rgba(186,26,26,.06)':r.isActual?'background:rgba(103,80,164,.06)':''}"><td>${r.date}${r.isActual?' <span style="color:var(--color-actual);font-size:9px">実績</span>':''}</td><td>¥${r.income.toLocaleString()}</td><td>¥${r.fixed.toLocaleString()}</td><td>¥${r.installment.toLocaleString()}</td><td>¥${r.recurring.toLocaleString()}</td><td>¥${r.large.toLocaleString()}</td><td class="${r.monthly>=0?'positive':'negative'}">¥${r.monthly.toLocaleString()}</td><td class="${r.balance<0?'negative':''}"><strong>¥${r.balance.toLocaleString()}</strong></td></tr>`).join('')}</tbody></table>`}
 function displayChart(results){const ctx=document.getElementById('savingsChart').getContext('2d');if(chartInstance)chartInstance.destroy();const isDark=document.documentElement.getAttribute('data-theme')==='dark',grid=isDark?'rgba(255,255,255,.08)':'rgba(0,0,0,.05)',txt=isDark?'#BFC9C8':'#3F4949';chartInstance=new Chart(ctx,{type:'line',data:{labels:results.map(r=>r.date),datasets:[{label:'残高',data:results.map(r=>r.balance),borderColor:isDark?'#82D5D5':'#006A6A',backgroundColor:isDark?'rgba(130,213,213,.1)':'rgba(0,106,106,.1)',tension:.4,fill:true,borderWidth:2,pointRadius:results.map(r=>r.isActual?4:0),pointBackgroundColor:isDark?'#D0BCFF':'#6750A4'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:grid},ticks:{color:txt,callback:v=>'¥'+v.toLocaleString()}},x:{grid:{display:false},ticks:{color:txt,maxRotation:45,minRotation:45}}}}})}
 function loadCompareData(){loadCompareMonth();displayCompareChart();displayAllUnplanned();updateCompareSummary()}
-function updateCompareSummary(){const months=generateMonths();let latestMk=null,totalUnp=0;months.forEach(m=>{const d=actualData[m.key];if(d&&d.balance)latestMk=m.key;if(d&&d.unplanned)d.unplanned.forEach(u=>totalUnp+=u.amount)});document.getElementById('totalUnplanned').textContent='¥'+totalUnp.toLocaleString();if(latestMk){const pl=getPlannedBalance(latestMk),ac=actualData[latestMk],diff=ac.balance-pl;document.getElementById('comparePlannedBalance').textContent='¥'+pl.toLocaleString();document.getElementById('compareActualBalance').textContent='¥'+ac.balance.toLocaleString();document.getElementById('compareDiff').textContent=(diff>=0?'+':'')+'¥'+diff.toLocaleString();document.getElementById('compareDiff').className='value '+(diff>=0?'positive':'negative');document.getElementById('compareDiffPercent').textContent=`(${latestMk})`}}
+function updateCompareSummary(){const months=generateMonths();let latestMk=null,totalUnp=0;months.forEach(m=>{const d=actualData[m.key];if(d&&d.balance)latestMk=m.key;if(d&&d.unplanned)d.unplanned.forEach(u=>totalUnp+=u.amount)});document.getElementById('totalUnplanned').textContent='¥'+totalUnp.toLocaleString();const rp=document.getElementById('reservePocketSummary');if(rp){const actualPocket=calcActualReservePocket();if(actualPocket>0){rp.innerHTML=`<div class='reserve-pocket-banner' style='margin-bottom:12px'><div class='reserve-pocket-label'><span class='material-icons-round'>savings</span>予備費ポケット残高（実績ベース）</div><div class='reserve-pocket-amount'>¥${actualPocket.toLocaleString()}</div></div>`}else{rp.innerHTML=''}};if(latestMk){const pl=getPlannedBalance(latestMk),ac=actualData[latestMk],diff=ac.balance-pl;document.getElementById('comparePlannedBalance').textContent='¥'+pl.toLocaleString();document.getElementById('compareActualBalance').textContent='¥'+ac.balance.toLocaleString();document.getElementById('compareDiff').textContent=(diff>=0?'+':'')+'¥'+diff.toLocaleString();document.getElementById('compareDiff').className='value '+(diff>=0?'positive':'negative');document.getElementById('compareDiffPercent').textContent=`(${latestMk})`}}
 function getPlannedBalance(mk){let bal=settings.initialSavings;for(const m of generateMonths()){bal+=calcIncome(m.key)-calcFixed(m.key)-calcInst(m.key)-calcRec(m.key)-calcLarge(m.key);if(m.key===mk)return bal}return bal}
 function loadCompareMonth(){const mk=document.getElementById('compareMonth').value;if(!mk)return;const pl=getPlannedBalance(mk),plInc=calcIncome(mk),ac=actualData[mk]||{income:0,balance:0,expenses:{},unplanned:[]},exps=getPlannedExpensesForMonth(mk);let html='<div class="compare-row header"><div>項目</div><div>予定</div><div>実績</div></div>';const idiff=(ac.income||0)-plInc;html+=`<div class="compare-row"><div class="compare-label">収入</div><div class="compare-planned">¥${plInc.toLocaleString()}</div><div class="compare-actual">${ac.income?'¥'+ac.income.toLocaleString()+`<span class="compare-diff ${idiff>=0?'diff-positive':'diff-negative'}">${idiff>=0?'+':''}¥${idiff.toLocaleString()}</span>`:'-'}</div></div>`;exps.forEach(e=>{const av=ac.expenses[e.id],has=av!==undefined,d=has?e.amount-av:0;html+=`<div class="compare-row"><div class="compare-label">${e.name}</div><div class="compare-planned">¥${e.amount.toLocaleString()}</div><div class="compare-actual">${has?'¥'+av.toLocaleString()+`<span class="compare-diff ${d>=0?'diff-positive':'diff-negative'}">${d>=0?'+':''}¥${d.toLocaleString()}</span>`:'-'}</div></div>`});const unp=(ac.unplanned||[]).reduce((s,i)=>s+i.amount,0);if(unp)html+=`<div class="compare-row" style="border-left:3px solid var(--color-negative)"><div class="compare-label" style="color:var(--color-negative)">予定外</div><div class="compare-planned">¥0</div><div class="compare-actual" style="color:var(--color-negative)">¥${unp.toLocaleString()}</div></div>`;const bdiff=(ac.balance||0)-pl;html+=`<div class="compare-row" style="background:var(--md-sys-color-primary-container)"><div class="compare-label"><strong>残高</strong></div><div class="compare-planned"><strong>¥${pl.toLocaleString()}</strong></div><div class="compare-actual"><strong>${ac.balance?'¥'+ac.balance.toLocaleString()+`<span class="compare-diff ${bdiff>=0?'diff-positive':'diff-negative'}">${bdiff>=0?'+':''}¥${bdiff.toLocaleString()}</span>`:'-'}</strong></div></div>`;document.getElementById('compareDetails').innerHTML=html}
 function displayAllUnplanned(){const c=document.getElementById('allUnplannedList'),all=[];generateMonths().forEach(m=>{const d=actualData[m.key];if(d&&d.unplanned)d.unplanned.forEach(u=>all.push({...u,mk:m.key}))});if(!all.length){c.innerHTML='<div class="empty-state"><p>予定外支出なし</p></div>';return}const cats={};all.forEach(u=>{cats[u.category]=(cats[u.category]||0)+u.amount});const total=all.reduce((s,u)=>s+u.amount,0);c.innerHTML=`<div class="stats-grid" style="margin-bottom:12px">${Object.entries(cats).map(([cat,amt])=>{const pct=((amt/total)*100).toFixed(0);return`<div class="stats-item"><h4>${cat}<span style="color:var(--color-negative);font-size:14px">¥${amt.toLocaleString()}</span></h4><div style="font-size:12px;color:var(--md-sys-color-on-surface-variant)">${pct}%</div><div class="progress-bar"><div class="progress-fill warning" style="width:${pct}%"></div></div></div>`}).join('')}</div>${all.map(u=>`<div style="padding:10px 12px;background:var(--md-sys-color-surface-container);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;font-size:13px"><div><span style="font-weight:500">${u.category}</span> <span style="font-size:11px;color:var(--md-sys-color-outline)">${u.mk}</span>${u.memo?`<div style="font-size:12px;color:var(--md-sys-color-on-surface-variant)">${u.memo}</div>`:''}</div><div style="color:var(--color-negative);font-weight:500">¥${u.amount.toLocaleString()}</div></div>`).join('')}`}
